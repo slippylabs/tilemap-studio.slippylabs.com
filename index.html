@@ -1,0 +1,986 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Tilemap Studio // tilemap-studio.slippylabs.com</title>
+<meta name="description" content="Paint a tilemap and let the tiles pick themselves — real 47-tile blob autotiling, layers, a collision layer, and export as JSON, CSV or a Tiled-compatible map. Runs entirely in your browser.">
+<meta property="og:type" content="website">
+<meta property="og:url" content="https://tilemap-studio.slippylabs.com/">
+<meta property="og:title" content="Tilemap Studio // tilemap-studio.slippylabs.com">
+<meta property="og:description" content="Paint a tilemap and let the tiles pick themselves — real 47-tile blob autotiling, layers, a collision layer, and export as JSON, CSV or a Tiled-compatible map. Runs entirely in your browser.">
+<meta property="og:image" content="https://tilemap-studio.slippylabs.com/og-image.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="Tilemap Studio // tilemap-studio.slippylabs.com">
+<meta name="twitter:description" content="Paint a tilemap and let the tiles pick themselves — real 47-tile blob autotiling, layers, a collision layer, and export as JSON, CSV or a Tiled-compatible map. Runs entirely in your browser.">
+<meta name="twitter:image" content="https://tilemap-studio.slippylabs.com/og-image.png">
+<link rel="icon" href="data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2064%2064%22%3E%3Ccircle%20cx%3D%2232%22%20cy%3D%2234%22%20r%3D%2222%22%20fill%3D%22%231c8a52%22%20stroke%3D%22%2339ff8f%22%20stroke-width%3D%222%22%2F%3E%3Ccircle%20cx%3D%2220%22%20cy%3D%2216%22%20r%3D%228%22%20fill%3D%22%231c8a52%22%20stroke%3D%22%2339ff8f%22%20stroke-width%3D%222%22%2F%3E%3Ccircle%20cx%3D%2244%22%20cy%3D%2216%22%20r%3D%228%22%20fill%3D%22%231c8a52%22%20stroke%3D%22%2339ff8f%22%20stroke-width%3D%222%22%2F%3E%3C%2Fsvg%3E">
+<meta name="theme-color" content="#050b10">
+<link rel="stylesheet" href="style.css?v=1">
+<script>/* perf-lite: drop blend/blur effects on low-power devices. ?fx=lite or ?fx=full to override (persisted). */
+(function(){try{var k="slippy-fx",m=location.search.match(/[?&]fx=(lite|full)/),v=m?m[1]:localStorage.getItem(k);if(m)localStorage.setItem(k,v);if(v==="lite"||(v!=="full"&&(navigator.hardwareConcurrency||8)<=2))document.documentElement.classList.add("perf-lite");}catch(e){}})();</script>
+</head>
+<body>
+
+<div class="starfield"></div>
+<div class="scanlines"></div>
+
+<main class="page-wrap">
+  <div class="hud-panel wide">
+    <div class="corner tl"></div>
+    <div class="corner tr"></div>
+    <div class="corner bl"></div>
+    <div class="corner br"></div>
+
+    <div class="callsign-row">
+      <div class="toad-avatar-wrap">
+        <svg class="toad-avatar" width="46" height="46" viewBox="0 0 64 64">
+          <circle cx="32" cy="34" r="22" fill="#1c8a52" stroke="#39ff8f" stroke-width="2"/>
+          <circle cx="20" cy="16" r="8" fill="#1c8a52" stroke="#39ff8f" stroke-width="2"/>
+          <circle cx="44" cy="16" r="8" fill="#1c8a52" stroke="#39ff8f" stroke-width="2"/>
+          <circle cx="20" cy="16" r="3.5" fill="#050b10"/>
+          <circle cx="44" cy="16" r="3.5" fill="#050b10"/>
+          <ellipse cx="24" cy="32" rx="4.5" ry="5.5" fill="#050b10"/>
+          <ellipse cx="40" cy="32" rx="4.5" ry="5.5" fill="#050b10"/>
+          <circle cx="24" cy="30" r="1.4" fill="#39ff8f"/>
+          <circle cx="40" cy="30" r="1.4" fill="#39ff8f"/>
+          <path d="M22 42 Q32 48 42 42" stroke="#050b10" stroke-width="2" fill="none" stroke-linecap="round"/>
+        </svg>
+        <div class="lock-reticle"></div>
+      </div>
+      <span class="callsign">Workshop Division // Tool</span>
+      <div class="nav-links">
+        <a href="https://projects.slippylabs.com/" class="logout-link">← Archive</a>
+      </div>
+    </div>
+
+
+    <h1>TILEMAP STUDIO</h1>
+    <p class="subtitle">Draw where the grass goes. The corners, edges and inside bends work themselves out, because which tile belongs in a cell is a function of its eight neighbours and nothing else — and there are exactly forty-seven answers.</p>
+
+    <div class="filter-bar" id="tool-bar">
+      <button class="hud-tab active" data-tool="paint">Paint</button>
+      <button class="hud-tab" data-tool="erase">Erase</button>
+      <button class="hud-tab" data-tool="fill">Fill</button>
+      <button class="hud-tab" data-tool="rect">Rectangle</button>
+      <button class="hud-tab" data-tool="pick">Pick</button>
+    </div>
+
+    <div class="tm-layout">
+      <div class="tm-canvas-wrap">
+        <canvas id="map" width="768" height="576"
+                aria-label="Tilemap canvas. Paint with the pointer, or use the cursor pad below."></canvas>
+        <div class="tm-hover" id="hover-readout">&nbsp;</div>
+      </div>
+
+      <div class="tm-side">
+        <div class="tool-field-row">
+          <label class="tool-field-label" for="layer-select">Layer</label>
+          <select class="tool-select" id="layer-select"></select>
+        </div>
+        <div class="tool-field-row">
+          <label class="tool-field-label" for="terrain-select">Terrain</label>
+          <select class="tool-select" id="terrain-select"></select>
+        </div>
+        <div class="tool-field-row">
+          <label class="tool-field-label" for="rule-select">Autotile rule</label>
+          <select class="tool-select" id="rule-select">
+            <option value="blob" selected>Blob — 47 tiles, corners and all</option>
+            <option value="edge">Edge — 16 tiles, orthogonals only</option>
+            <option value="none">None — one flat tile</option>
+          </select>
+        </div>
+        <p class="tool-note" id="rule-note"></p>
+
+        <div class="two-col tm-dims">
+          <div class="tool-field-row">
+            <label class="tool-field-label" for="w-input">Width</label>
+            <input class="tool-number-input" id="w-input" type="number" value="32" min="4" max="128" step="1">
+          </div>
+          <div class="tool-field-row">
+            <label class="tool-field-label" for="h-input">Height</label>
+            <input class="tool-number-input" id="h-input" type="number" value="24" min="4" max="128" step="1">
+          </div>
+        </div>
+        <div class="tool-field-row">
+          <label class="tool-field-label" for="brush-slider">Brush — <span id="brush-value">1</span></label>
+          <div class="tool-slider-row"><input type="range" id="brush-slider" min="1" max="8" step="1" value="1"></div>
+        </div>
+        <div class="tool-checks">
+          <label class="tool-check"><input type="checkbox" id="grid-check" checked> Grid</label>
+          <label class="tool-check"><input type="checkbox" id="index-check"> Show tile indices</label>
+          <label class="tool-check"><input type="checkbox" id="collide-check"> Collision overlay</label>
+        </div>
+
+        <div class="tm-pad" id="cursor-pad">
+          <p class="tool-note">Cursor — the pointer is fiddly on a phone.</p>
+          <div class="tm-dpad">
+            <button class="tool-btn ghost" data-move="0,-1" aria-label="Cursor up">↑</button>
+            <button class="tool-btn ghost" data-move="-1,0" aria-label="Cursor left">←</button>
+            <button class="tool-btn ghost" data-move="1,0" aria-label="Cursor right">→</button>
+            <button class="tool-btn ghost" data-move="0,1" aria-label="Cursor down">↓</button>
+          </div>
+          <div class="tool-controls">
+            <button class="tool-btn" id="apply-btn">Apply here</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="tool-controls">
+      <button class="tool-btn" id="demo-btn">Demo island</button>
+      <button class="tool-btn ghost" id="clear-btn">Clear layer</button>
+      <button class="tool-btn ghost" id="undo-btn">Undo</button>
+      <button class="tool-btn ghost" id="json-btn">Download JSON</button>
+      <button class="tool-btn ghost" id="tmj-btn">Download .tmj (Tiled)</button>
+      <button class="tool-btn ghost" id="csv-btn">Download CSV</button>
+      <button class="tool-btn ghost" id="table-btn">Copy autotile table</button>
+      <a id="download-link" hidden></a>
+    </div>
+    <div class="copy-toast" id="toast">Copied</div>
+
+    <div class="net-grid">
+      <div class="net-tile"><div class="net-tile-label">Size</div><div class="net-tile-value" id="stat-size">—</div></div>
+      <div class="net-tile"><div class="net-tile-label">Painted</div><div class="net-tile-value" id="stat-painted">—</div></div>
+      <div class="net-tile"><div class="net-tile-label">Distinct tiles</div><div class="net-tile-value" id="stat-distinct">—</div></div>
+      <div class="net-tile"><div class="net-tile-label">Solid cells</div><div class="net-tile-value" id="stat-solid">—</div></div>
+    </div>
+
+    <h2 class="tm-h2">The 47 tiles</h2>
+    <p class="tool-note">Every cell of a blob tileset, drawn from its own neighbour mask. Hover one to see which of the 256 neighbourhoods land on it — and this is the sheet your artist has to draw.</p>
+    <div class="tm-atlas-wrap">
+      <canvas id="atlas" width="752" height="200" aria-label="The 47 blob autotile shapes."></canvas>
+      <div class="tm-hover" id="atlas-readout">&nbsp;</div>
+    </div>
+    <div class="comm-window">
+      <div class="comm-portrait">
+        <svg width="36" height="36" viewBox="0 0 64 64">
+          <circle cx="32" cy="34" r="22" fill="#1c8a52" stroke="#39ff8f" stroke-width="2"/>
+          <circle cx="20" cy="16" r="8" fill="#1c8a52" stroke="#39ff8f" stroke-width="2"/>
+          <circle cx="44" cy="16" r="8" fill="#1c8a52" stroke="#39ff8f" stroke-width="2"/>
+          <circle cx="20" cy="16" r="3.5" fill="#050b10"/>
+          <circle cx="44" cy="16" r="3.5" fill="#050b10"/>
+          <ellipse cx="24" cy="32" rx="4.5" ry="5.5" fill="#050b10"/>
+          <ellipse cx="40" cy="32" rx="4.5" ry="5.5" fill="#050b10"/>
+          <circle cx="24" cy="30" r="1.4" fill="#39ff8f"/>
+          <circle cx="40" cy="30" r="1.4" fill="#39ff8f"/>
+          <path d="M22 42 Q32 48 42 42" stroke="#050b10" stroke-width="2" fill="none" stroke-linecap="round"/>
+        </svg>
+      </div>
+      <div class="comm-body">
+        <div class="comm-label"><span class="dot"></span> Incoming Transmission &mdash; Slippy</div>
+        <p>&quot;Nobody hand-places corner tiles twice. The first time is a lesson.&quot;</p>
+      </div>
+    </div>
+
+    <a href="https://projects.slippylabs.com/" class="hud-btn">← Back to Archive</a>
+  </div>
+</main>
+
+
+<script>
+/* ---- Autotiling ---------------------------------------------------------------
+   Which tile belongs in a cell is a function of its eight neighbours and nothing
+   else. Number those neighbours as bits and you have 256 possible
+   neighbourhoods -- but they are not 256 different pictures.
+
+   The rule that collapses them: a DIAGONAL neighbour only matters when both of
+   the orthogonals beside it are also filled. If grass is above me and to my
+   right but not above-right, the corner is an outside bend and the diagonal is
+   irrelevant; if grass is above, right AND above-right, it is solid and the
+   diagonal decides whether there is a notch. Clearing every diagonal whose two
+   orthogonals are not both set takes 256 neighbourhoods down to exactly 47.
+
+   That 47 is not a number to take on trust -- it falls out of enumerating all
+   256 masks, which the page does at load and prints. */
+
+const N = 1;
+const E = 2;
+const S = 4;
+const W = 8;
+const NE = 16;
+const SE = 32;
+const SW = 64;
+const NW = 128;
+
+const CORNER_PAIRS = [[NE, N, E], [SE, S, E], [SW, S, W], [NW, N, W]];
+
+/* A diagonal that is not backed by both of its orthogonals cannot be seen, so
+   it is cleared. Doing this before anything else is what makes the tile set
+   finite and the lookup a plain table. */
+function normaliseMask(mask) {
+  let m = mask;
+  for (const [corner, a, b] of CORNER_PAIRS) {
+    if (!((m & a) && (m & b))) m &= ~corner;
+  }
+  return m;
+}
+
+/* The canonical blob table: every distinct normalised mask, in ascending order,
+   so tile 0 is the lone island and the indices are stable across runs. */
+function buildBlobTable() {
+  const seen = new Set();
+  for (let m = 0; m < 256; m++) seen.add(normaliseMask(m));
+  const masks = Array.from(seen).sort((a, b) => a - b);
+  const indexByMask = new Map();
+  masks.forEach((m, i) => indexByMask.set(m, i));
+  return { masks, indexByMask };
+}
+
+const BLOB = buildBlobTable();
+
+/* Edge-only autotiling: the classic 16-tile set, orthogonals only. Cheaper for
+   the artist, and visibly wrong on inside corners -- which is exactly why the
+   page offers both and lets you look. */
+function buildEdgeTable() {
+  const masks = [];
+  for (let m = 0; m < 16; m++) masks.push(m);
+  const indexByMask = new Map(masks.map((m, i) => [m, i]));
+  return { masks, indexByMask };
+}
+
+const EDGE = buildEdgeTable();
+
+function tableFor(rule) {
+  if (rule === 'edge') return EDGE;
+  if (rule === 'none') return { masks: [0], indexByMask: new Map([[0, 0]]) };
+  return BLOB;
+}
+
+/* ---- The grid ---------------------------------------------------------------
+   A layer is a flat Int16Array of terrain ids, -1 for empty. Tile indices are
+   never stored: they are derived from the terrain grid on demand, so a cell can
+   never disagree with its neighbours -- which is the bug autotiling exists to
+   prevent and the bug a cached index would quietly reintroduce. */
+
+function makeLayer(width, height, name) {
+  return { name, width, height, cells: new Int16Array(width * height).fill(-1) };
+}
+
+const inBounds = (l, x, y) => x >= 0 && y >= 0 && x < l.width && y < l.height;
+const cellAt = (l, x, y) => (inBounds(l, x, y) ? l.cells[y * l.width + x] : -1);
+
+/* Out of bounds counts as "same terrain", so an island painted to the edge of
+   the map does not grow a coastline along the border. That is a choice, and the
+   opposite choice is what makes a tilemap look like it is sitting in a box. */
+function neighbourMask(layer, x, y, terrain, options = {}) {
+  const outside = options.outsideMatches === false ? false : true;
+  const same = (nx, ny) => {
+    if (!inBounds(layer, nx, ny)) return outside;
+    return cellAt(layer, nx, ny) === terrain;
+  };
+  let m = 0;
+  if (same(x, y - 1)) m |= N;
+  if (same(x + 1, y)) m |= E;
+  if (same(x, y + 1)) m |= S;
+  if (same(x - 1, y)) m |= W;
+  if (same(x + 1, y - 1)) m |= NE;
+  if (same(x + 1, y + 1)) m |= SE;
+  if (same(x - 1, y + 1)) m |= SW;
+  if (same(x - 1, y - 1)) m |= NW;
+  return m;
+}
+
+function tileIndexAt(layer, x, y, rule, options = {}) {
+  const terrain = cellAt(layer, x, y);
+  if (terrain < 0) return -1;
+  if (rule === 'none') return 0;
+  const raw = neighbourMask(layer, x, y, terrain, options);
+  const table = tableFor(rule);
+  const mask = rule === 'edge' ? (raw & 15) : normaliseMask(raw);
+  const index = table.indexByMask.get(mask);
+  return index === undefined ? 0 : index;
+}
+
+/* ---- Editing ----------------------------------------------------------------- */
+
+function paintCell(layer, x, y, terrain, brush = 1) {
+  const changed = [];
+  const r = Math.max(0, brush - 1);
+  for (let dy = -r; dy <= r; dy++) {
+    for (let dx = -r; dx <= r; dx++) {
+      const nx = x + dx;
+      const ny = y + dy;
+      if (!inBounds(layer, nx, ny)) continue;
+      /* A round brush, because a square one paints corners you did not intend
+         and then the autotiler faithfully renders them. */
+      if (brush > 2 && dx * dx + dy * dy > r * r + r * 0.5) continue;
+      const i = ny * layer.width + nx;
+      if (layer.cells[i] === terrain) continue;
+      changed.push([i, layer.cells[i]]);
+      layer.cells[i] = terrain;
+    }
+  }
+  return changed;
+}
+
+function paintRect(layer, x0, y0, x1, y1, terrain) {
+  const changed = [];
+  const lox = Math.min(x0, x1);
+  const hix = Math.max(x0, x1);
+  const loy = Math.min(y0, y1);
+  const hiy = Math.max(y0, y1);
+  for (let y = loy; y <= hiy; y++) {
+    for (let x = lox; x <= hix; x++) {
+      if (!inBounds(layer, x, y)) continue;
+      const i = y * layer.width + x;
+      if (layer.cells[i] === terrain) continue;
+      changed.push([i, layer.cells[i]]);
+      layer.cells[i] = terrain;
+    }
+  }
+  return changed;
+}
+
+/* Four-connected flood fill over cells of the same starting terrain. Iterative,
+   with an explicit stack: a recursive fill blows the stack on a 128x128 map,
+   which is inside the size this page offers. */
+function floodFill(layer, x, y, terrain) {
+  const target = cellAt(layer, x, y);
+  const changed = [];
+  if (target === terrain || !inBounds(layer, x, y)) return changed;
+  const stack = [y * layer.width + x];
+  const seen = new Uint8Array(layer.cells.length);
+  seen[stack[0]] = 1;
+  while (stack.length) {
+    const i = stack.pop();
+    changed.push([i, layer.cells[i]]);
+    layer.cells[i] = terrain;
+    const cx = i % layer.width;
+    const cy = (i / layer.width) | 0;
+    const push = (nx, ny) => {
+      if (!inBounds(layer, nx, ny)) return;
+      const n = ny * layer.width + nx;
+      if (seen[n] || layer.cells[n] !== target) return;
+      seen[n] = 1;
+      stack.push(n);
+    };
+    push(cx + 1, cy); push(cx - 1, cy); push(cx, cy + 1); push(cx, cy - 1);
+  }
+  return changed;
+}
+
+function revert(layer, changed) {
+  for (let i = changed.length - 1; i >= 0; i--) layer.cells[changed[i][0]] = changed[i][1];
+}
+
+/* ---- Terrains ----------------------------------------------------------------- */
+
+const TERRAINS = [
+  { name: 'Water', colour: '#1d4f7c', edge: '#2f6ea6', solid: false },
+  { name: 'Sand', colour: '#c8b273', edge: '#e0cd94', solid: false },
+  { name: 'Grass', colour: '#3f7a3a', edge: '#5aa254', solid: false },
+  { name: 'Forest', colour: '#245c3a', edge: '#31794e', solid: false },
+  { name: 'Rock', colour: '#5a5a5a', edge: '#7d7d7d', solid: true },
+  { name: 'Lava', colour: '#8c2f16', edge: '#d1561f', solid: true },
+];
+
+/* ---- Export ------------------------------------------------------------------
+   Three formats. The tile indices are computed at export time from the terrain
+   grid, so what a consumer loads is exactly what the page draws. */
+
+function layerTileGrid(layer, rule, options) {
+  const out = new Array(layer.height);
+  for (let y = 0; y < layer.height; y++) {
+    const row = new Array(layer.width);
+    for (let x = 0; x < layer.width; x++) {
+      const terrain = cellAt(layer, x, y);
+      row[x] = terrain < 0 ? -1 : tileIndexAt(layer, x, y, rule, options);
+    }
+    out[y] = row;
+  }
+  return out;
+}
+
+function toJson(doc) {
+  return {
+    generator: 'tilemap-studio.slippylabs.com',
+    width: doc.width,
+    height: doc.height,
+    rule: doc.rule,
+    tileCount: tableFor(doc.rule).masks.length,
+    terrains: TERRAINS.map((t, i) => ({ id: i, name: t.name, solid: t.solid })),
+    layers: doc.layers.map((l) => ({
+      name: l.name,
+      terrain: Array.from({ length: l.height }, (_, y) => Array.from(l.cells.subarray(y * l.width, (y + 1) * l.width))),
+      tiles: layerTileGrid(l, doc.rule, doc.options),
+    })),
+    autotile: {
+      note: 'tile index -> the normalised neighbour mask it represents; bits N E S W NE SE SW NW = 1 2 4 8 16 32 64 128',
+      masks: tableFor(doc.rule).masks,
+    },
+  };
+}
+
+function toCsv(doc) {
+  return doc.layers.map((l) =>
+    `# layer ${l.name}\n` + layerTileGrid(l, doc.rule, doc.options).map((row) => row.join(',')).join('\n')
+  ).join('\n\n');
+}
+
+/* Tiled's JSON map format. Tiled is 1-based with 0 meaning "no tile", so every
+   index shifts by one on the way out -- getting that wrong produces a map that
+   loads with every tile one place off in the set, which looks like a corrupted
+   tileset rather than an off-by-one. */
+function toTmj(doc) {
+  const tileCount = tableFor(doc.rule).masks.length;
+  return {
+    compressionlevel: -1,
+    width: doc.width,
+    height: doc.height,
+    tilewidth: 32,
+    tileheight: 32,
+    infinite: false,
+    orientation: 'orthogonal',
+    renderorder: 'right-down',
+    type: 'map',
+    version: '1.10',
+    tiledversion: '1.10.2',
+    nextlayerid: doc.layers.length + 1,
+    nextobjectid: 1,
+    tilesets: [{
+      columns: 12,
+      firstgid: 1,
+      image: 'tileset.png',
+      imagewidth: 12 * 32,
+      imageheight: Math.ceil(tileCount / 12) * 32,
+      margin: 0,
+      name: `${doc.rule}-autotile`,
+      spacing: 0,
+      tilecount: tileCount,
+      tilewidth: 32,
+      tileheight: 32,
+    }],
+    layers: doc.layers.map((l, i) => ({
+      id: i + 1,
+      name: l.name,
+      type: 'tilelayer',
+      opacity: 1,
+      visible: true,
+      width: l.width,
+      height: l.height,
+      x: 0,
+      y: 0,
+      data: layerTileGrid(l, doc.rule, doc.options).flat().map((t) => (t < 0 ? 0 : t + 1)),
+    })),
+  };
+}
+
+function autotileTableText(rule) {
+  const table = tableFor(rule);
+  const bits = ['N', 'E', 'S', 'W', 'NE', 'SE', 'SW', 'NW'];
+  const lines = [
+    `// ${rule} autotiling: ${table.masks.length} tiles`,
+    '// bit order: ' + bits.map((b, i) => `${b}=${1 << i}`).join(' '),
+    '// A diagonal bit is cleared unless both of its orthogonals are set.',
+    'const TILE_FOR_MASK = new Int8Array(256).fill(-1);',
+  ];
+  for (let m = 0; m < 256; m++) {
+    const key = rule === 'edge' ? (m & 15) : normaliseMask(m);
+    const idx = table.indexByMask.get(key);
+    if (idx !== undefined) lines.push(`TILE_FOR_MASK[${m}] = ${idx};`);
+  }
+  return lines.join('\n');
+}
+
+/* ---- A demo map ---------------------------------------------------------------
+   Deterministic, so the screenshot and the tests agree, and shaped to exercise
+   the awkward cases: inside corners, one-tile islands, a diagonal isthmus. */
+function demoIsland(width, height) {
+  const layer = makeLayer(width, height, 'Ground');
+  const cx = width / 2;
+  const cy = height / 2;
+  for (let y = 0; y < height; y++) {
+    for (let x = 0; x < width; x++) {
+      const dx = (x - cx) / (width * 0.42);
+      const dy = (y - cy) / (height * 0.42);
+      const r = Math.hypot(dx, dy);
+      const wobble = 1 + 0.18 * Math.sin(Math.atan2(dy, dx) * 5) + 0.1 * Math.sin(Math.atan2(dy, dx) * 3 + 1.1);
+      let terrain = 0;                                  /* water */
+      if (r < 0.96 * wobble) terrain = 1;               /* sand */
+      if (r < 0.82 * wobble) terrain = 2;               /* grass */
+      if (r < 0.46 * wobble) terrain = 3;               /* forest */
+      if (r < 0.2) terrain = 4;                         /* rock */
+      layer.cells[y * width + x] = terrain;
+    }
+  }
+  /* A lake, so there is an inside corner to look at, and two lone islands. */
+  for (let y = 0; y < height; y++) {
+    for (let x = 0; x < width; x++) {
+      const d = Math.hypot(x - cx * 1.42, y - cy * 0.62);
+      if (d < Math.min(width, height) * 0.11) layer.cells[y * width + x] = 0;
+    }
+  }
+  const put = (x, y, t) => { if (inBounds(layer, x, y)) layer.cells[y * width + x] = t; };
+  put(2, 2, 2);
+  put(width - 3, height - 3, 4);
+  return layer;
+}
+
+/* ==== UI ==== */
+
+const $ = (id) => document.getElementById(id);
+const canvas = $('map');
+const ctx = canvas.getContext('2d', { alpha: false });
+const atlasCanvas = $('atlas');
+const actx = atlasCanvas.getContext('2d', { alpha: false });
+
+const state = {
+  width: 32, height: 24, rule: 'blob', tool: 'paint', terrain: 2,
+  brush: 1, grid: true, indices: false, collide: false,
+  cursor: { x: 16, y: 12 }, layerIndex: 0,
+};
+
+let doc = null;
+const undoStack = [];
+
+function newDocument(width, height) {
+  doc = {
+    width, height, rule: state.rule, options: {},
+    layers: [makeLayer(width, height, 'Ground'), makeLayer(width, height, 'Decor')],
+  };
+  undoStack.length = 0;
+}
+
+const activeLayer = () => doc.layers[state.layerIndex];
+
+/* ---- drawing ---- */
+
+function cellSize() {
+  return Math.max(4, Math.floor(Math.min(canvas.width / doc.width, canvas.height / doc.height)));
+}
+
+function drawTileShape(c, px, py, size, mask, colour, edge, rule) {
+  /* The tile is drawn from its mask rather than sampled from a sheet: the point
+     of the page is to show what the mask MEANS, and a hand-drawn sheet would
+     hide the very thing being demonstrated. Fill the body, then cut the sides
+     and corners the mask says are open. */
+  c.fillStyle = colour;
+  c.fillRect(px, py, size, size);
+
+  const inset = Math.max(1, Math.round(size * 0.22));
+  c.fillStyle = edge;
+  const has = (bit) => (mask & bit) !== 0;
+
+  if (!has(N)) c.fillRect(px, py, size, inset);
+  if (!has(S)) c.fillRect(px, py + size - inset, size, inset);
+  if (!has(W)) c.fillRect(px, py, inset, size);
+  if (!has(E)) c.fillRect(px + size - inset, py, inset, size);
+
+  if (rule !== 'edge') {
+    /* An inside corner: both orthogonals filled but the diagonal open. That is
+       the case a 16-tile set cannot express, and drawing it is how the
+       difference between the two modes becomes visible. */
+    if (has(N) && has(E) && !has(NE)) c.fillRect(px + size - inset, py, inset, inset);
+    if (has(S) && has(E) && !has(SE)) c.fillRect(px + size - inset, py + size - inset, inset, inset);
+    if (has(S) && has(W) && !has(SW)) c.fillRect(px, py + size - inset, inset, inset);
+    if (has(N) && has(W) && !has(NW)) c.fillRect(px, py, inset, inset);
+  }
+}
+
+function draw() {
+  const size = cellSize();
+  const offX = Math.floor((canvas.width - size * doc.width) / 2);
+  const offY = Math.floor((canvas.height - size * doc.height) / 2);
+  ctx.fillStyle = '#04070a';
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+  for (const layer of doc.layers) {
+    for (let y = 0; y < doc.height; y++) {
+      for (let x = 0; x < doc.width; x++) {
+        const terrain = cellAt(layer, x, y);
+        if (terrain < 0) continue;
+        const t = TERRAINS[terrain] || TERRAINS[0];
+        const raw = neighbourMask(layer, x, y, terrain, doc.options);
+        const mask = state.rule === 'edge' ? (raw & 15) : normaliseMask(raw);
+        drawTileShape(ctx, offX + x * size, offY + y * size, size,
+          state.rule === 'none' ? 255 : mask, t.colour, t.edge, state.rule);
+      }
+    }
+  }
+
+  if (state.collide) {
+    ctx.fillStyle = 'rgba(255,70,85,0.28)';
+    for (let y = 0; y < doc.height; y++) {
+      for (let x = 0; x < doc.width; x++) {
+        const solid = doc.layers.some((l) => {
+          const t = cellAt(l, x, y);
+          return t >= 0 && TERRAINS[t] && TERRAINS[t].solid;
+        });
+        if (solid) ctx.fillRect(offX + x * size, offY + y * size, size, size);
+      }
+    }
+  }
+
+  if (state.grid && size >= 8) {
+    ctx.strokeStyle = 'rgba(57,255,143,0.13)';
+    ctx.lineWidth = 1;
+    for (let x = 0; x <= doc.width; x++) {
+      ctx.beginPath();
+      ctx.moveTo(offX + x * size + 0.5, offY);
+      ctx.lineTo(offX + x * size + 0.5, offY + doc.height * size);
+      ctx.stroke();
+    }
+    for (let y = 0; y <= doc.height; y++) {
+      ctx.beginPath();
+      ctx.moveTo(offX, offY + y * size + 0.5);
+      ctx.lineTo(offX + doc.width * size, offY + y * size + 0.5);
+      ctx.stroke();
+    }
+  }
+
+  if (state.indices && size >= 14) {
+    ctx.fillStyle = 'rgba(230,255,240,0.9)';
+    ctx.font = `${Math.max(8, Math.floor(size * 0.38))}px Consolas, monospace`;
+    ctx.textAlign = 'center';
+    for (let y = 0; y < doc.height; y++) {
+      for (let x = 0; x < doc.width; x++) {
+        const idx = tileIndexAt(activeLayer(), x, y, state.rule, doc.options);
+        if (idx < 0) continue;
+        ctx.fillText(String(idx), offX + x * size + size / 2, offY + y * size + size * 0.68);
+      }
+    }
+    ctx.textAlign = 'left';
+  }
+
+  /* the cursor, for the d-pad */
+  const cu = state.cursor;
+  ctx.strokeStyle = '#ffbe50';
+  ctx.lineWidth = 2;
+  ctx.strokeRect(offX + cu.x * size + 1, offY + cu.y * size + 1, size - 2, size - 2);
+
+  refreshStats();
+}
+
+function drawAtlas() {
+  const table = tableFor(state.rule);
+  const cols = 12;
+  const size = 52;
+  const pad = 8;
+  const rows = Math.ceil(table.masks.length / cols);
+  atlasCanvas.width = cols * (size + pad) + pad;
+  atlasCanvas.height = rows * (size + pad + 14) + pad;
+  actx.fillStyle = '#04070a';
+  actx.fillRect(0, 0, atlasCanvas.width, atlasCanvas.height);
+  const t = TERRAINS[state.terrain] || TERRAINS[2];
+  table.masks.forEach((mask, i) => {
+    const px = pad + (i % cols) * (size + pad);
+    const py = pad + Math.floor(i / cols) * (size + pad + 14);
+    drawTileShape(actx, px, py, size, state.rule === 'none' ? 255 : mask, t.colour, t.edge, state.rule);
+    actx.fillStyle = 'rgba(160,200,180,0.75)';
+    actx.font = '10px Consolas, monospace';
+    actx.fillText(String(i), px + 2, py + size + 11);
+  });
+}
+
+function refreshStats() {
+  let painted = 0;
+  let solid = 0;
+  const distinct = new Set();
+  for (let y = 0; y < doc.height; y++) {
+    for (let x = 0; x < doc.width; x++) {
+      for (const layer of doc.layers) {
+        const terrain = cellAt(layer, x, y);
+        if (terrain < 0) continue;
+        painted++;
+        distinct.add(tileIndexAt(layer, x, y, state.rule, doc.options));
+      }
+      const isSolid = doc.layers.some((l) => {
+        const t = cellAt(l, x, y);
+        return t >= 0 && TERRAINS[t] && TERRAINS[t].solid;
+      });
+      if (isSolid) solid++;
+    }
+  }
+  $('stat-size').textContent = `${doc.width} × ${doc.height}`;
+  $('stat-painted').textContent = String(painted);
+  $('stat-distinct').textContent = `${distinct.size} of ${tableFor(state.rule).masks.length}`;
+  $('stat-solid').textContent = String(solid);
+}
+
+/* ---- interaction ---- */
+
+function cellFromPointer(ev) {
+  const size = cellSize();
+  const offX = Math.floor((canvas.width - size * doc.width) / 2);
+  const offY = Math.floor((canvas.height - size * doc.height) / 2);
+  const rect = canvas.getBoundingClientRect();
+  const px = ((ev.clientX - rect.left) / rect.width) * canvas.width;
+  const py = ((ev.clientY - rect.top) / rect.height) * canvas.height;
+  return { x: Math.floor((px - offX) / size), y: Math.floor((py - offY) / size) };
+}
+
+let stroke = null;
+let rectStart = null;
+
+function applyAt(x, y) {
+  if (!inBounds(activeLayer(), x, y)) return;
+  const layer = activeLayer();
+  let changed = [];
+  if (state.tool === 'paint') changed = paintCell(layer, x, y, state.terrain, state.brush);
+  else if (state.tool === 'erase') changed = paintCell(layer, x, y, -1, state.brush);
+  else if (state.tool === 'fill') changed = floodFill(layer, x, y, state.terrain);
+  else if (state.tool === 'pick') {
+    const t = cellAt(layer, x, y);
+    if (t >= 0) { state.terrain = t; $('terrain-select').value = String(t); drawAtlas(); }
+    return;
+  }
+  if (changed.length) {
+    if (stroke) stroke.push(...changed);
+    else undoStack.push({ layer, changed });
+  }
+  draw();
+}
+
+canvas.addEventListener('pointerdown', (ev) => {
+  const { x, y } = cellFromPointer(ev);
+  state.cursor = { x: Math.max(0, Math.min(doc.width - 1, x)), y: Math.max(0, Math.min(doc.height - 1, y)) };
+  canvas.setPointerCapture(ev.pointerId);
+  ev.preventDefault();
+  if (state.tool === 'rect') { rectStart = { x, y }; return; }
+  stroke = [];
+  applyAt(x, y);
+});
+
+canvas.addEventListener('pointermove', (ev) => {
+  const { x, y } = cellFromPointer(ev);
+  if (inBounds(activeLayer(), x, y)) {
+    const layer = activeLayer();
+    const terrain = cellAt(layer, x, y);
+    const raw = neighbourMask(layer, x, y, terrain, doc.options);
+    const norm = normaliseMask(raw);
+    $('hover-readout').textContent = terrain < 0
+      ? `(${x}, ${y}) empty`
+      : `(${x}, ${y}) ${TERRAINS[terrain].name} — mask ${raw} → ${norm} → tile ${tileIndexAt(layer, x, y, state.rule, doc.options)}`;
+  }
+  if (!ev.buttons) return;
+  if (state.tool === 'rect') return;
+  if (stroke) applyAt(x, y);
+});
+
+for (const type of ['pointerup', 'pointercancel']) {
+  canvas.addEventListener(type, (ev) => {
+    if (state.tool === 'rect' && rectStart) {
+      const { x, y } = cellFromPointer(ev);
+      const changed = paintRect(activeLayer(), rectStart.x, rectStart.y, x, y, state.terrain);
+      if (changed.length) undoStack.push({ layer: activeLayer(), changed });
+      rectStart = null;
+      draw();
+    }
+    if (stroke && stroke.length) undoStack.push({ layer: activeLayer(), changed: stroke });
+    stroke = null;
+  });
+}
+
+canvas.addEventListener('pointerleave', () => { $('hover-readout').innerHTML = '&nbsp;'; });
+
+atlasCanvas.addEventListener('pointermove', (ev) => {
+  const table = tableFor(state.rule);
+  const cols = 12;
+  const size = 52;
+  const pad = 8;
+  const rect = atlasCanvas.getBoundingClientRect();
+  const px = ((ev.clientX - rect.left) / rect.width) * atlasCanvas.width;
+  const py = ((ev.clientY - rect.top) / rect.height) * atlasCanvas.height;
+  const col = Math.floor((px - pad) / (size + pad));
+  const row = Math.floor((py - pad) / (size + pad + 14));
+  const i = row * cols + col;
+  if (i < 0 || i >= table.masks.length || col < 0 || col >= cols) {
+    $('atlas-readout').innerHTML = '&nbsp;';
+    return;
+  }
+  const mask = table.masks[i];
+  let hits = 0;
+  for (let m = 0; m < 256; m++) {
+    const key = state.rule === 'edge' ? (m & 15) : normaliseMask(m);
+    if (key === mask) hits++;
+  }
+  const bits = [[N, 'N'], [E, 'E'], [S, 'S'], [W, 'W'], [NE, 'NE'], [SE, 'SE'], [SW, 'SW'], [NW, 'NW']]
+    .filter(([b]) => mask & b).map(([, n]) => n).join(' ') || 'alone';
+  $('atlas-readout').textContent = `tile ${i} — mask ${mask} (${bits}); ${hits} of the 256 neighbourhoods land here`;
+});
+atlasCanvas.addEventListener('pointerleave', () => { $('atlas-readout').innerHTML = '&nbsp;'; });
+
+/* ---- the cursor pad ---- */
+
+$('cursor-pad').addEventListener('click', (ev) => {
+  const btn = ev.target.closest('[data-move]');
+  if (!btn) return;
+  const [dx, dy] = btn.dataset.move.split(',').map(Number);
+  state.cursor.x = Math.max(0, Math.min(doc.width - 1, state.cursor.x + dx));
+  state.cursor.y = Math.max(0, Math.min(doc.height - 1, state.cursor.y + dy));
+  draw();
+});
+$('apply-btn').addEventListener('click', () => applyAt(state.cursor.x, state.cursor.y));
+
+/* ---- wiring ---- */
+
+function buildSelects() {
+  const ts = $('terrain-select');
+  ts.textContent = '';
+  TERRAINS.forEach((t, i) => {
+    const opt = document.createElement('option');
+    opt.value = String(i);
+    opt.textContent = `${t.name}${t.solid ? ' (solid)' : ''}`;
+    ts.appendChild(opt);
+  });
+  ts.value = String(state.terrain);
+
+  const ls = $('layer-select');
+  ls.textContent = '';
+  doc.layers.forEach((l, i) => {
+    const opt = document.createElement('option');
+    opt.value = String(i);
+    opt.textContent = l.name;
+    ls.appendChild(opt);
+  });
+  ls.value = String(state.layerIndex);
+}
+
+const RULE_NOTES = {
+  blob: `All eight neighbours, so inside corners work. Exactly ${BLOB.masks.length} tiles — enumerated at load, not taken on trust.`,
+  edge: 'Orthogonals only: 16 tiles, and an inside corner is drawn as if it were solid. Cheap to draw, and you can see where it gives up.',
+  none: 'No autotiling: one flat tile per terrain, for a layer where the shape does not matter.',
+};
+
+$('rule-select').addEventListener('change', () => {
+  state.rule = $('rule-select').value;
+  doc.rule = state.rule;
+  $('rule-note').textContent = RULE_NOTES[state.rule];
+  drawAtlas();
+  draw();
+});
+$('terrain-select').addEventListener('change', () => {
+  state.terrain = Number($('terrain-select').value);
+  drawAtlas();
+});
+$('layer-select').addEventListener('change', () => { state.layerIndex = Number($('layer-select').value); draw(); });
+$('brush-slider').addEventListener('input', () => {
+  state.brush = Number($('brush-slider').value);
+  $('brush-value').textContent = String(state.brush);
+});
+for (const [id, key] of [['grid-check', 'grid'], ['index-check', 'indices'], ['collide-check', 'collide']]) {
+  $(id).addEventListener('change', () => { state[key] = $(id).checked; draw(); });
+}
+for (const id of ['w-input', 'h-input']) {
+  $(id).addEventListener('change', () => {
+    const w = Math.max(4, Math.min(128, Number($('w-input').value) || 32));
+    const h = Math.max(4, Math.min(128, Number($('h-input').value) || 24));
+    state.width = w;
+    state.height = h;
+    state.cursor = { x: Math.min(state.cursor.x, w - 1), y: Math.min(state.cursor.y, h - 1) };
+    newDocument(w, h);
+    buildSelects();
+    draw();
+  });
+}
+
+$('tool-bar').addEventListener('click', (ev) => {
+  const btn = ev.target.closest('.hud-tab');
+  if (!btn) return;
+  $('tool-bar').querySelectorAll('.hud-tab').forEach((b) => b.classList.remove('active'));
+  btn.classList.add('active');
+  state.tool = btn.dataset.tool;
+});
+
+$('demo-btn').addEventListener('click', () => {
+  const layer = demoIsland(doc.width, doc.height);
+  doc.layers[0] = layer;
+  state.layerIndex = 0;
+  buildSelects();
+  undoStack.length = 0;
+  draw();
+});
+$('clear-btn').addEventListener('click', () => {
+  const layer = activeLayer();
+  const changed = [];
+  for (let i = 0; i < layer.cells.length; i++) {
+    if (layer.cells[i] !== -1) { changed.push([i, layer.cells[i]]); layer.cells[i] = -1; }
+  }
+  if (changed.length) undoStack.push({ layer, changed });
+  draw();
+});
+$('undo-btn').addEventListener('click', () => {
+  const entry = undoStack.pop();
+  if (!entry) return;
+  revert(entry.layer, entry.changed);
+  draw();
+});
+
+function download(name, text, type) {
+  const link = $('download-link');
+  const url = URL.createObjectURL(new Blob([text], { type }));
+  link.href = url;
+  link.download = name;
+  link.click();
+  setTimeout(() => URL.revokeObjectURL(url), 4000);
+}
+
+$('json-btn').addEventListener('click', () => download('tilemap.json', JSON.stringify(toJson(doc), null, 2), 'application/json'));
+$('tmj-btn').addEventListener('click', () => download('tilemap.tmj', JSON.stringify(toTmj(doc), null, 2), 'application/json'));
+$('csv-btn').addEventListener('click', () => download('tilemap.csv', toCsv(doc), 'text/csv'));
+
+function toast(msg) {
+  const el = $('toast');
+  el.textContent = msg;
+  el.classList.add('show');
+  setTimeout(() => el.classList.remove('show'), 1400);
+}
+$('table-btn').addEventListener('click', async () => {
+  try {
+    await navigator.clipboard.writeText(autotileTableText(state.rule));
+    toast('Table copied');
+  } catch (err) { toast('Clipboard blocked'); }
+});
+
+window.__tilemap = {
+  normaliseMask, buildBlobTable, tableFor, makeLayer, neighbourMask, tileIndexAt,
+  paintCell, paintRect, floodFill, layerTileGrid, toJson, toCsv, toTmj,
+  autotileTableText, demoIsland, TERRAINS, BLOB, EDGE,
+  set(opts) {
+    Object.assign(state, opts);
+    if (opts.width || opts.height) newDocument(state.width, state.height);
+    $('rule-select').value = state.rule;
+    doc.rule = state.rule;
+    buildSelects();
+    drawAtlas();
+    draw();
+    return { width: doc.width, height: doc.height, rule: state.rule };
+  },
+  loadDemo() { doc.layers[0] = demoIsland(doc.width, doc.height); draw(); return doc.layers[0].cells.length; },
+  paintAt(x, y) { applyAt(x, y); return tileIndexAt(activeLayer(), x, y, state.rule, doc.options); },
+  get doc() { return doc; },
+  get tiles() { return layerTileGrid(activeLayer(), state.rule, doc.options); },
+  get blobCount() { return BLOB.masks.length; },
+};
+
+/* ---- boot ---- */
+newDocument(state.width, state.height);
+buildSelects();
+$('rule-note').textContent = RULE_NOTES[state.rule];
+doc.layers[0] = demoIsland(doc.width, doc.height);
+drawAtlas();
+draw();
+</script>
+<!-- Slippy Deck: floating Slippy TV + jukebox player. Renders nothing unless admin.slippylabs.com/whoami confirms a signed-in account. -->
+<script defer src="https://slippylabs.com/deck/deck.js"></script>
+<!-- Slippy Labs sitewide privacy link. Self-contained on purpose: these sites
+     share no CSS, so it carries its own styles and inherits the page's text
+     colour instead of assuming a palette. position/z-index are load bearing --
+     the HUD theme's .starfield/.scanlines are fixed at z-index 0-1 and would
+     paint straight over an unpositioned footer.
+     The .page-wrap trim below is what keeps the bar on the first screen. -->
+<div class="sl-legal"><a href="https://slippylabs.com/privacy.html">Privacy</a></div>
+<style>
+.sl-legal{box-sizing:border-box;position:relative;z-index:3;height:64px;display:flex;align-items:center;justify-content:center;margin:0;padding:0 12px;font-family:"Consolas","SFMono-Regular",Menlo,Monaco,"Courier New",monospace;font-size:11px;letter-spacing:.08em;text-transform:uppercase;opacity:.5}
+.sl-legal a{color:inherit;text-decoration:none;display:inline-flex;align-items:center;justify-content:center;min-height:44px;padding:0 14px}
+.sl-legal a:hover,.sl-legal a:focus-visible{text-decoration:underline;opacity:1}
+/* This page centres .page-wrap at min-height:100vh, which would push the bar a
+   whole screen below the fold. Give back exactly the bar height instead of
+   adding a scrollbar to a page that had none. */
+.page-wrap{min-height:calc(100vh - 64px)}
+</style>
+</body>
+</html>
